@@ -21,170 +21,152 @@
   ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
   ::-webkit-scrollbar-thumb:hover { background: #475569; }
   input[type=number]::-webkit-inner-spin-button { opacity: 0.5; }
-  * { transition: border-color 0.15s; }
+  input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.5); cursor: pointer; }
+  .modal-overlay { position:fixed;inset:0;background:rgba(0,0,0,0.72);backdrop-filter:blur(4px);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px; }
+  .modal-box { background:#1e293b;border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:28px;width:100%;max-width:460px;max-height:90vh;overflow-y:auto; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+  .fade-in { animation: fadeIn 0.22s ease; }
+  button:hover:not(:disabled) { filter: brightness(1.09); }
+  select option { background:#1e293b; color:#f1f5f9; }
+  @media(max-width:768px){
+    #main-area{margin-left:0!important;padding:14px!important;padding-bottom:80px!important;}
+    aside{display:none!important;}
+    #mob-nav{display:flex!important;}
+  }
 </style>
 </head>
 <body>
 <div id="root"></div>
-
 <script type="text/babel">
-const { useState, useEffect, useCallback, useMemo } = React;
+const { useState, useEffect, useMemo } = React;
 
-// ============================================================
-// CONSTANTS & CORE LOGIC
-// ============================================================
+// ── CONSTANTS ─────────────────────────────────────────────────
 const CONCEITOS = ["I","S","R","B","MB"];
 const CONCEITO_ORDEM = {I:0,S:1,R:2,B:3,MB:4};
-
-function percentToConceito(pct) {
-  if (pct >= 95) return "MB";
-  if (pct >= 80) return "B";
-  if (pct >= 65) return "R";
-  if (pct >= 50) return "S";
-  return "I";
-}
-function conceitoColor(c) {
-  return {I:"#ef4444",S:"#f97316",R:"#eab308",B:"#22c55e",MB:"#06b6d4"}[c] || "#94a3b8";
-}
-
-const MATERIAS_DEFAULT = ["Matemática","Português","Inglês","História","Geografia","Ciências","Física","Química","Biologia","Filosofia"];
+const SERIES = ["6º Ano","7º Ano","8º Ano","9º Ano","1º EM","2º EM","3º EM"];
+const MATERIAS = ["Matemática","Português","Inglês","História","Geografia","Física","Química","Biologia","Literatura","Alemão","Espanhol","Filosofia","Sociologia","Artes","Ed. Física","Redação"];
 const TRIMESTRES = ["1º Trimestre","2º Trimestre","3º Trimestre"];
+const TIPO_COLOR = {Prova:"#6366f1",Simulado:"#f59e0b",SAS:"#10b981",Outro:"#94a3b8"};
 
-// ============================================================
-// MINI COMPONENTS
-// ============================================================
-function ConceitoTag({ conceito, size="md" }) {
-  const sz = {sm:"text-xs",md:"",lg:"text-lg"}[size];
-  const pad = {sm:"2px 8px",md:"4px 12px",lg:"6px 16px"}[size];
-  const fs = {sm:11,md:13,lg:15}[size];
-  return (
-    <span style={{
-      fontWeight:800, borderRadius:999, border:`1.5px solid ${conceitoColor(conceito)}50`,
-      color:conceitoColor(conceito), background:conceitoColor(conceito)+"18",
-      padding:pad, fontSize:fs, letterSpacing:"0.5px", display:"inline-block", lineHeight:1.6,
-    }}>{conceito}</span>
-  );
+function pctToC(p){ if(p>=95)return"MB"; if(p>=80)return"B"; if(p>=65)return"R"; if(p>=50)return"S"; return"I"; }
+function cColor(c){ return {I:"#ef4444",S:"#f97316",R:"#eab308",B:"#22c55e",MB:"#06b6d4"}[c]||"#94a3b8"; }
+function fmtDate(iso){ if(!iso)return""; const[y,m,d]=iso.split("-"); return`${d}/${m}/${y}`; }
+function todayISO(){ return new Date().toISOString().split("T")[0]; }
+function daysUntil(iso){ if(!iso)return null; return Math.ceil((new Date(iso+"T12:00:00")-new Date())/86400000); }
+
+// ── ATOMS ─────────────────────────────────────────────────────
+function CTag({c,sz="md"}){
+  const p={sm:"2px 8px",md:"4px 12px",lg:"6px 16px"}[sz];
+  const f={sm:11,md:13,lg:15}[sz];
+  return <span style={{fontWeight:800,borderRadius:999,border:`1.5px solid ${cColor(c)}50`,color:cColor(c),background:cColor(c)+"18",padding:p,fontSize:f,letterSpacing:"0.5px",display:"inline-block",lineHeight:1.6}}>{c}</span>;
 }
-
-function ProgressArc({ conceito }) {
-  const pcts = {I:12,S:35,R:58,B:80,MB:97};
-  const pct = pcts[conceito]||0;
-  const r = 28; const circ = 2*Math.PI*r;
-  return (
-    <svg width="72" height="72" viewBox="0 0 72 72">
-      <circle cx="36" cy="36" r={r} fill="none" stroke="#1e293b" strokeWidth="6"/>
-      <circle cx="36" cy="36" r={r} fill="none" stroke={conceitoColor(conceito)} strokeWidth="6"
-        strokeDasharray={`${circ*pct/100} ${circ}`} strokeLinecap="round"
-        transform="rotate(-90 36 36)" style={{transition:"stroke-dasharray 0.7s ease"}}/>
-      <text x="36" y="41" textAnchor="middle" fill={conceitoColor(conceito)} fontSize="14" fontWeight="800" fontFamily="Sora,sans-serif">{conceito}</text>
-    </svg>
-  );
+function PBar({c}){
+  const w={I:12,S:35,R:58,B:80,MB:97}[c]||0;
+  return <div style={{flex:1,height:6,borderRadius:99,background:"#1e293b",overflow:"hidden"}}><div style={{height:"100%",width:`${w}%`,borderRadius:99,background:`linear-gradient(90deg,${cColor(c)}99,${cColor(c)})`,transition:"width 0.7s"}}></div></div>;
 }
-
-function ProgressBar({ conceito }) {
-  const pcts = {I:12,S:35,R:58,B:80,MB:97};
-  const pct = pcts[conceito]||0;
-  return (
-    <div style={{flex:1,height:6,borderRadius:99,background:"#1e293b",overflow:"hidden"}}>
-      <div style={{height:"100%",width:`${pct}%`,borderRadius:99,background:`linear-gradient(90deg,${conceitoColor(conceito)}99,${conceitoColor(conceito)})`,transition:"width 0.7s ease"}}/>
-    </div>
-  );
+function PArc({c}){
+  const w={I:12,S:35,R:58,B:80,MB:97}[c]||0; const r=28; const ci=2*Math.PI*r;
+  return <svg width="72" height="72" viewBox="0 0 72 72"><circle cx="36" cy="36" r={r} fill="none" stroke="#1e293b" strokeWidth="6"/><circle cx="36" cy="36" r={r} fill="none" stroke={cColor(c)} strokeWidth="6" strokeDasharray={`${ci*w/100} ${ci}`} strokeLinecap="round" transform="rotate(-90 36 36)" style={{transition:"stroke-dasharray 0.7s"}}/><text x="36" y="41" textAnchor="middle" fill={cColor(c)} fontSize="14" fontWeight="800" fontFamily="Sora">{c}</text></svg>;
 }
+function EyeBtn({show,toggle}){
+  return <button type="button" onClick={toggle} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#475569",padding:0,display:"flex",alignItems:"center"}}>
+    {show
+      ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+    }
+  </button>;
+}
+function PwdInp({value,onChange,placeholder,autoComplete,onKeyDown}){
+  const [show,setShow]=useState(false);
+  const s={width:"100%",padding:"11px 44px 11px 14px",borderRadius:10,border:"1.5px solid rgba(255,255,255,0.1)",background:"rgba(15,23,42,0.8)",color:"#f1f5f9",fontSize:14,outline:"none"};
+  return <div style={{position:"relative"}}><input type={show?"text":"password"} value={value} onChange={onChange} placeholder={placeholder||"••••••••"} autoComplete={autoComplete} onKeyDown={onKeyDown} style={s}/><EyeBtn show={show} toggle={()=>setShow(!show)}/></div>;
+}
+function IS(s={}){return{width:"100%",padding:"10px 12px",borderRadius:9,border:"1.5px solid rgba(255,255,255,0.08)",background:"#1e293b",color:"#f1f5f9",fontSize:13,fontFamily:"inherit",outline:"none",...s};}
+function Sel({value,onChange,opts}){return <select value={value} onChange={e=>onChange(e.target.value)} style={IS()}>{opts.map(o=><option key={o}>{o}</option>)}</select>;}
+function Inp({value,onChange,placeholder,type="text",min,onKeyDown,style={}}){return <input type={type} min={min} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} onKeyDown={onKeyDown} style={IS(style)}/>;}
+function Btn({onClick,children,disabled,style={}}){return <button onClick={onClick} disabled={disabled} style={{padding:"11px 18px",borderRadius:10,border:"none",cursor:disabled?"default":"pointer",background:disabled?"#334155":"linear-gradient(135deg,#6366f1,#8b5cf6)",color:"#fff",fontWeight:700,fontSize:13,fontFamily:"inherit",boxShadow:disabled?"none":"0 4px 16px #6366f130",transition:"all 0.15s",opacity:disabled?0.6:1,...style}}>{children}</button>;}
+function Card({title,children,style={}}){return <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:18,padding:22,...style}}>{title&&<h3 style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:18,letterSpacing:"1px"}}>{title.toUpperCase()}</h3>}{children}</div>;}
+function Field({label,children}){return <div><label style={{display:"block",fontSize:10,fontWeight:700,color:"#475569",marginBottom:5,letterSpacing:"0.5px"}}>{label.toUpperCase()}</label>{children}</div>;}
+function TwoCol({children}){return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>{children}</div>;}
+function Empty({msg="Nenhum dado registrado."}){return <div style={{textAlign:"center",padding:"28px 0",color:"#334155"}}><p style={{fontSize:28,marginBottom:6}}>📭</p><p style={{fontSize:12}}>{msg}</p></div>;}
+function NRow({title,sub,c,onDel}){return <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",background:"rgba(255,255,255,0.02)",borderRadius:10,border:"1px solid rgba(255,255,255,0.04)"}}><div><p style={{fontSize:13,fontWeight:600,color:"#cbd5e1"}}>{title}</p><p style={{fontSize:11,color:"#475569"}}>{sub}</p></div><div style={{display:"flex",alignItems:"center",gap:10}}><CTag c={c} sz="sm"/><button onClick={onDel} style={{background:"none",border:"none",cursor:"pointer",color:"#ef4444",fontSize:18,lineHeight:1}}>×</button></div></div>;}
+function Page({title,icon,desc,children}){return <div className="fade-in"><div style={{marginBottom:22}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}><span style={{fontSize:20}}>{icon}</span><h1 style={{fontSize:22,fontWeight:800,color:"#fff",letterSpacing:"-0.5px"}}>{title}</h1></div><p style={{color:"#475569",fontSize:13}}>{desc}</p></div>{children}</div>;}
 
-// ============================================================
-// AUTH PAGE
-// ============================================================
-function AuthPage({ onLogin }) {
-  const [tab, setTab] = useState("login");
-  const [form, setForm] = useState({username:"",password:"",nome:""});
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+// ── AUTH ──────────────────────────────────────────────────────
+function Auth({onLogin}){
+  const [tab,setTab]=useState("login");
+  const [f,setF]=useState({email:"",pw:"",nome:"",serie:SERIES[0]});
+  const [err,setErr]=useState(""); const [load,setLoad]=useState(false);
 
-  function handle() {
-    setError("");
-    if (!form.username.trim() || !form.password) { setError("Preencha todos os campos."); return; }
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      const users = JSON.parse(localStorage.getItem("sn_users")||"[]");
-      if (tab==="login") {
-        const u = users.find(u=>u.username===form.username&&u.password===form.password);
-        if (!u) { setError("Usuário ou senha incorretos."); return; }
+  function go(){
+    setErr("");
+    if(!f.email.trim()||!f.pw){setErr("Preencha todos os campos.");return;}
+    if(tab==="register"&&!f.nome.trim()){setErr("Informe seu nome.");return;}
+    if(tab==="register"&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email)){setErr("E-mail inválido.");return;}
+    if(tab==="register"&&f.pw.length<6){setErr("Senha: mínimo 6 caracteres.");return;}
+    setLoad(true);
+    setTimeout(()=>{
+      setLoad(false);
+      const us=JSON.parse(localStorage.getItem("sn_users")||"[]");
+      const ek=f.email.trim().toLowerCase();
+      if(tab==="login"){
+        const u=us.find(u=>u.email===ek&&u.password===f.pw);
+        if(!u){setErr("E-mail ou senha incorretos.");return;}
         onLogin(u);
       } else {
-        if (users.find(u=>u.username===form.username)) { setError("Este nome de usuário já existe."); return; }
-        const novo = {id:Date.now(),username:form.username.trim(),password:form.password,nome:form.nome||form.username.trim()};
-        localStorage.setItem("sn_users",JSON.stringify([...users,novo]));
-        onLogin(novo);
+        if(us.find(u=>u.email===ek)){setErr("E-mail já cadastrado.");return;}
+        const n={id:Date.now(),email:ek,password:f.pw,nome:f.nome.trim(),serie:f.serie,username:ek.split("@")[0]};
+        localStorage.setItem("sn_users",JSON.stringify([...us,n]));
+        onLogin(n);
       }
-    }, 500);
+    },500);
   }
 
-  const iStyle = {
-    width:"100%",padding:"11px 14px",borderRadius:10,border:"1.5px solid rgba(255,255,255,0.1)",
-    background:"rgba(15,23,42,0.8)",color:"#f1f5f9",fontSize:14,outline:"none",
-  };
+  const iS={width:"100%",padding:"11px 14px",borderRadius:10,border:"1.5px solid rgba(255,255,255,0.1)",background:"rgba(15,23,42,0.8)",color:"#f1f5f9",fontSize:14,outline:"none"};
 
-  return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#0f172a 0%,#1e1b4b 50%,#0f172a 100%)",padding:"16px",position:"relative",overflow:"hidden"}}>
-      {/* BG orbs */}
-      {[[{bg:"#6366f1",t:5,l:5},{bg:"#8b5cf6",t:80,l:10},{bg:"#06b6d4",t:40,l:85},{bg:"#3b82f6",t:70,l:70}]].flat().map((o,i)=>(
-        <div key={i} style={{position:"fixed",width:350,height:350,borderRadius:"50%",background:`radial-gradient(circle,${o.bg}22 0%,transparent 70%)`,top:`${o.t}%`,left:`${o.l}%`,transform:"translate(-50%,-50%)",pointerEvents:"none"}}/>
-      ))}
-      <div style={{width:"100%",maxWidth:400,position:"relative",zIndex:1}}>
-        {/* Logo */}
-        <div style={{textAlign:"center",marginBottom:32}}>
-          <div style={{display:"inline-flex",alignItems:"center",gap:12,marginBottom:10}}>
-            <div style={{width:48,height:48,borderRadius:14,background:"linear-gradient(135deg,#6366f1,#8b5cf6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,boxShadow:"0 8px 20px #6366f150"}}>🎓</div>
-            <span style={{fontSize:28,fontWeight:800,color:"#fff",letterSpacing:"-1px"}}>SchoolNotes</span>
-          </div>
-          <p style={{color:"#475569",fontSize:14}}>Acompanhe e compare seu desempenho</p>
+  return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#0f172a 0%,#1e1b4b 50%,#0f172a 100%)",padding:"16px",overflow:"hidden",position:"relative"}}>
+    {[{bg:"#6366f1",t:5,l:5},{bg:"#8b5cf6",t:80,l:10},{bg:"#06b6d4",t:40,l:85},{bg:"#3b82f6",t:70,l:70}].map((o,i)=><div key={i} style={{position:"fixed",width:360,height:360,borderRadius:"50%",background:`radial-gradient(circle,${o.bg}22 0%,transparent 70%)`,top:`${o.t}%`,left:`${o.l}%`,transform:"translate(-50%,-50%)",pointerEvents:"none"}}/>)}
+    <div style={{width:"100%",maxWidth:420,position:"relative",zIndex:1}} className="fade-in">
+      <div style={{textAlign:"center",marginBottom:32}}>
+        <div style={{display:"inline-flex",alignItems:"center",gap:12,marginBottom:10}}>
+          <div style={{width:48,height:48,borderRadius:14,background:"linear-gradient(135deg,#6366f1,#8b5cf6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,boxShadow:"0 8px 20px #6366f150"}}>🎓</div>
+          <span style={{fontSize:28,fontWeight:800,color:"#fff",letterSpacing:"-1px"}}>SchoolNotes</span>
         </div>
-
-        <div style={{background:"rgba(30,41,59,0.8)",backdropFilter:"blur(20px)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:22,padding:32,boxShadow:"0 30px 60px rgba(0,0,0,0.5)"}}>
-          {/* Tabs */}
-          <div style={{display:"flex",background:"rgba(0,0,0,0.3)",borderRadius:12,padding:4,marginBottom:26,gap:4}}>
-            {["login","register"].map(t=>(
-              <button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"9px 0",borderRadius:9,border:"none",cursor:"pointer",fontWeight:700,fontSize:14,fontFamily:"inherit",transition:"all 0.2s",background:tab===t?"linear-gradient(135deg,#6366f1,#8b5cf6)":"transparent",color:tab===t?"#fff":"#475569",boxShadow:tab===t?"0 2px 10px #6366f130":"none"}}>
-                {t==="login"?"Entrar":"Criar Conta"}
-              </button>
-            ))}
-          </div>
-
-          <div style={{display:"flex",flexDirection:"column",gap:14}}>
-            {tab==="register"&&<div>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:"#64748b",marginBottom:5,letterSpacing:"0.5px"}}>NOME COMPLETO</label>
-              <input value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} placeholder="Seu nome completo" style={iStyle}/>
-            </div>}
-            <div>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:"#64748b",marginBottom:5,letterSpacing:"0.5px"}}>NOME DE USUÁRIO</label>
-              <input value={form.username} onChange={e=>setForm({...form,username:e.target.value})} placeholder="seu_usuario" style={iStyle} autoComplete="username"/>
-            </div>
-            <div>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:"#64748b",marginBottom:5,letterSpacing:"0.5px"}}>SENHA</label>
-              <input type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="••••••••" style={iStyle} autoComplete={tab==="login"?"current-password":"new-password"} onKeyDown={e=>e.key==="Enter"&&handle()}/>
-            </div>
-            {error&&<div style={{padding:"10px 14px",borderRadius:10,background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.25)",color:"#f87171",fontSize:13}}>{error}</div>}
-            <button onClick={handle} disabled={loading} style={{padding:"13px",borderRadius:11,border:"none",cursor:loading?"default":"pointer",background:loading?"#334155":"linear-gradient(135deg,#6366f1,#8b5cf6)",color:"#fff",fontWeight:700,fontSize:15,fontFamily:"inherit",marginTop:4,boxShadow:loading?"none":"0 4px 20px #6366f140",transition:"all 0.2s"}}>
-              {loading?"⏳ Aguarde...":(tab==="login"?"Entrar →":"Criar Conta →")}
-            </button>
-          </div>
-
-          <p style={{textAlign:"center",marginTop:18,fontSize:12,color:"#334155"}}>
-            {tab==="login"?"Não tem conta? ":"Já tem conta? "}
-            <span onClick={()=>setTab(tab==="login"?"register":"login")} style={{color:"#818cf8",cursor:"pointer",fontWeight:600}}>{tab==="login"?"Crie uma →":"Entrar →"}</span>
-          </p>
+        <p style={{color:"#475569",fontSize:14}}>Acompanhe e compare seu desempenho</p>
+      </div>
+      <div style={{background:"rgba(30,41,59,0.85)",backdropFilter:"blur(20px)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:22,padding:32,boxShadow:"0 30px 60px rgba(0,0,0,0.5)"}}>
+        <div style={{display:"flex",background:"rgba(0,0,0,0.3)",borderRadius:12,padding:4,marginBottom:26,gap:4}}>
+          {["login","register"].map(t=><button key={t} onClick={()=>{setTab(t);setErr("");}} style={{flex:1,padding:"9px 0",borderRadius:9,border:"none",cursor:"pointer",fontWeight:700,fontSize:14,fontFamily:"inherit",transition:"all 0.2s",background:tab===t?"linear-gradient(135deg,#6366f1,#8b5cf6)":"transparent",color:tab===t?"#fff":"#475569"}}>{t==="login"?"Entrar":"Criar Conta"}</button>)}
         </div>
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          {tab==="register"&&<>
+            <div><label style={{display:"block",fontSize:11,fontWeight:700,color:"#64748b",marginBottom:5,letterSpacing:"0.5px"}}>NOME COMPLETO *</label><input value={f.nome} onChange={e=>setF({...f,nome:e.target.value})} placeholder="Seu nome completo" style={iS}/></div>
+            <div><label style={{display:"block",fontSize:11,fontWeight:700,color:"#64748b",marginBottom:5,letterSpacing:"0.5px"}}>SÉRIE *</label><select value={f.serie} onChange={e=>setF({...f,serie:e.target.value})} style={{...iS,appearance:"none"}}>{SERIES.map(s=><option key={s} style={{background:"#1e293b"}}>{s}</option>)}</select></div>
+          </>}
+          <div><label style={{display:"block",fontSize:11,fontWeight:700,color:"#64748b",marginBottom:5,letterSpacing:"0.5px"}}>E-MAIL *</label><input value={f.email} onChange={e=>setF({...f,email:e.target.value})} placeholder="seu@email.com" style={iS} type="email" autoComplete="email"/></div>
+          <div>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:"#64748b",marginBottom:5,letterSpacing:"0.5px"}}>SENHA *</label>
+            <PwdInp value={f.pw} onChange={e=>setF({...f,pw:e.target.value})} autoComplete={tab==="login"?"current-password":"new-password"} onKeyDown={e=>e.key==="Enter"&&go()}/>
+            {tab==="register"&&<p style={{fontSize:10,color:"#475569",marginTop:4}}>Mínimo 6 caracteres</p>}
+          </div>
+          {err&&<div style={{padding:"10px 14px",borderRadius:10,background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.25)",color:"#f87171",fontSize:13}}>{err}</div>}
+          <button onClick={go} disabled={load} style={{padding:"13px",borderRadius:11,border:"none",cursor:load?"default":"pointer",background:load?"#334155":"linear-gradient(135deg,#6366f1,#8b5cf6)",color:"#fff",fontWeight:700,fontSize:15,fontFamily:"inherit",marginTop:4,boxShadow:load?"none":"0 4px 20px #6366f140"}}>
+            {load?"⏳ Aguarde...":(tab==="login"?"Entrar →":"Criar Conta →")}
+          </button>
+        </div>
+        <p style={{textAlign:"center",marginTop:18,fontSize:12,color:"#334155"}}>
+          {tab==="login"?"Não tem conta? ":"Já tem conta? "}
+          <span onClick={()=>{setTab(tab==="login"?"register":"login");setErr("");}} style={{color:"#818cf8",cursor:"pointer",fontWeight:600}}>{tab==="login"?"Crie uma →":"Entrar →"}</span>
+        </p>
       </div>
     </div>
-  );
+  </div>;
 }
 
-// ============================================================
-// SHELL
-// ============================================================
-const NAV = [
+// ── NAV ───────────────────────────────────────────────────────
+const NAV=[
   {id:"dashboard",icon:"⊞",label:"Dashboard"},
+  {id:"calendario",icon:"🗓",label:"Calendário"},
   {id:"provas",icon:"✏",label:"Provas"},
   {id:"simulados",icon:"⚗",label:"Simulados"},
   {id:"sas",icon:"📅",label:"SAS"},
@@ -192,651 +174,363 @@ const NAV = [
   {id:"config",icon:"◎",label:"Config"},
 ];
 
-function Shell({ user, onLogout }) {
-  const [page, setPage] = useState("dashboard");
-  const [data, setData] = useState(()=>{
-    try { const s = localStorage.getItem(`sn_data_${user.id}`); return s?JSON.parse(s):defData(); } catch{ return defData(); }
-  });
+function defData(){return{provas:[],simulados:[],sas:[],eventos:[],config:{numSimulados:5,sasImpar:["Química","Matemática","História","Inglês","Português"],sasPar:["Física","Geografia","Alemão","Biologia","Literatura"]},amigos:[]};}
 
-  function defData() {
-    return {provas:[],simulados:[],sas:[],config:{numSimulados:5,sasImpar:["Matemática","Português","Inglês","Física","Química"],sasPar:["História","Geografia","Ciências","Biologia","Filosofia"]},amigos:[]};
-  }
+// ── SHELL ─────────────────────────────────────────────────────
+function Shell({user,onLogout}){
+  const [page,setPage]=useState("dashboard");
+  const [data,setData]=useState(()=>{try{const s=localStorage.getItem(`sn_data_${user.id}`);if(!s)return defData();return{...defData(),...JSON.parse(s)};}catch{return defData();}});
+  function save(nd){setData(nd);localStorage.setItem(`sn_data_${user.id}`,JSON.stringify(nd));}
+  const badge=useMemo(()=>(data.eventos||[]).filter(e=>!e.concluido&&daysUntil(e.data)>=0&&daysUntil(e.data)<=7).length,[data.eventos]);
 
-  function saveData(nd) {
-    setData(nd);
-    localStorage.setItem(`sn_data_${user.id}`,JSON.stringify(nd));
-  }
-
-  return (
-    <div style={{display:"flex",minHeight:"100vh",background:"#0a0f1e"}}>
-      {/* Sidebar */}
-      <aside style={{width:220,flexShrink:0,background:"rgba(15,23,42,0.95)",borderRight:"1px solid rgba(99,102,241,0.1)",display:"flex",flexDirection:"column",padding:"20px 10px",position:"fixed",top:0,bottom:0,left:0,zIndex:50}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,padding:"4px 10px",marginBottom:28}}>
-          <div style={{width:34,height:34,borderRadius:10,background:"linear-gradient(135deg,#6366f1,#8b5cf6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,boxShadow:"0 4px 12px #6366f140"}}>🎓</div>
-          <span style={{fontWeight:800,fontSize:15,color:"#fff",letterSpacing:"-0.3px"}}>SchoolNotes</span>
-        </div>
-
-        <nav style={{flex:1,display:"flex",flexDirection:"column",gap:2}}>
-          {NAV.map(n=>(
-            <button key={n.id} onClick={()=>setPage(n.id)} style={{
-              display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:13,textAlign:"left",transition:"all 0.15s",
-              background:page===n.id?"rgba(99,102,241,0.15)":"transparent",
-              color:page===n.id?"#a5b4fc":"#475569",
-              borderLeft:page===n.id?"3px solid #6366f1":"3px solid transparent",
-            }}>
-              <span style={{fontSize:14,opacity:0.9}}>{n.icon}</span>{n.label}
-            </button>
-          ))}
-        </nav>
-
-        <div style={{borderTop:"1px solid rgba(255,255,255,0.05)",paddingTop:14}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",marginBottom:8}}>
-            <div style={{width:30,height:30,borderRadius:"50%",background:"linear-gradient(135deg,#6366f1,#8b5cf6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:"#fff",flexShrink:0}}>
-              {(user.nome||user.username)[0].toUpperCase()}
-            </div>
-            <div style={{overflow:"hidden"}}>
-              <p style={{fontSize:12,fontWeight:700,color:"#cbd5e1",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{user.nome||user.username}</p>
-              <p style={{fontSize:10,color:"#475569"}}>@{user.username}</p>
-            </div>
-          </div>
-          <button onClick={onLogout} style={{width:"100%",padding:"8px",borderRadius:8,border:"1px solid rgba(239,68,68,0.2)",background:"rgba(239,68,68,0.05)",color:"#f87171",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:12,transition:"all 0.15s"}}>
-            Sair
-          </button>
-        </div>
-      </aside>
-
-      {/* Mobile bottom nav */}
-      <nav style={{display:"none",position:"fixed",bottom:0,left:0,right:0,background:"rgba(15,23,42,0.97)",borderTop:"1px solid rgba(99,102,241,0.15)",padding:"8px 4px",zIndex:99,justifyContent:"space-around",backdropFilter:"blur(10px)"}} id="mob-nav">
-        {NAV.map(n=>(
-          <button key={n.id} onClick={()=>setPage(n.id)} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"4px 8px",background:"none",border:"none",cursor:"pointer",color:page===n.id?"#a5b4fc":"#475569",fontFamily:"inherit"}}>
-            <span style={{fontSize:18}}>{n.icon}</span>
-            <span style={{fontSize:9,fontWeight:700}}>{n.label}</span>
-          </button>
-        ))}
+  return <div style={{display:"flex",minHeight:"100vh",background:"#0a0f1e"}}>
+    <aside style={{width:220,flexShrink:0,background:"rgba(15,23,42,0.97)",borderRight:"1px solid rgba(99,102,241,0.1)",display:"flex",flexDirection:"column",padding:"20px 10px",position:"fixed",top:0,bottom:0,left:0,zIndex:50}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"4px 10px",marginBottom:28}}>
+        <div style={{width:34,height:34,borderRadius:10,background:"linear-gradient(135deg,#6366f1,#8b5cf6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,boxShadow:"0 4px 12px #6366f140"}}>🎓</div>
+        <span style={{fontWeight:800,fontSize:15,color:"#fff",letterSpacing:"-0.3px"}}>SchoolNotes</span>
+      </div>
+      <nav style={{flex:1,display:"flex",flexDirection:"column",gap:2}}>
+        {NAV.map(n=><button key={n.id} onClick={()=>setPage(n.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:13,textAlign:"left",transition:"all 0.15s",background:page===n.id?"rgba(99,102,241,0.15)":"transparent",color:page===n.id?"#a5b4fc":"#475569",borderLeft:page===n.id?"3px solid #6366f1":"3px solid transparent",position:"relative"}}>
+          <span style={{fontSize:14,opacity:0.9}}>{n.icon}</span>{n.label}
+          {n.id==="calendario"&&badge>0&&<span style={{marginLeft:"auto",background:"#ef4444",color:"#fff",fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 6px"}}>{badge}</span>}
+        </button>)}
       </nav>
+      <div style={{borderTop:"1px solid rgba(255,255,255,0.05)",paddingTop:14}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",marginBottom:8}}>
+          <div style={{width:30,height:30,borderRadius:"50%",background:"linear-gradient(135deg,#6366f1,#8b5cf6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:"#fff",flexShrink:0}}>{(user.nome||user.email)[0].toUpperCase()}</div>
+          <div style={{overflow:"hidden"}}><p style={{fontSize:12,fontWeight:700,color:"#cbd5e1",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{user.nome||user.email}</p><p style={{fontSize:10,color:"#475569"}}>{user.serie||""}</p></div>
+        </div>
+        <button onClick={onLogout} style={{width:"100%",padding:"8px",borderRadius:8,border:"1px solid rgba(239,68,68,0.2)",background:"rgba(239,68,68,0.05)",color:"#f87171",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:12}}>Sair</button>
+      </div>
+    </aside>
+    <nav style={{display:"none",position:"fixed",bottom:0,left:0,right:0,background:"rgba(15,23,42,0.97)",borderTop:"1px solid rgba(99,102,241,0.15)",padding:"6px 2px",zIndex:99,justifyContent:"space-around",backdropFilter:"blur(10px)"}} id="mob-nav">
+      {NAV.map(n=><button key={n.id} onClick={()=>setPage(n.id)} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:1,padding:"4px 6px",background:"none",border:"none",cursor:"pointer",color:page===n.id?"#a5b4fc":"#475569",fontFamily:"inherit",position:"relative"}}>
+        <span style={{fontSize:16}}>{n.icon}</span><span style={{fontSize:8,fontWeight:700}}>{n.label}</span>
+        {n.id==="calendario"&&badge>0&&<span style={{position:"absolute",top:0,right:0,background:"#ef4444",color:"#fff",fontSize:8,fontWeight:800,borderRadius:99,padding:"0 4px"}}>{badge}</span>}
+      </button>)}
+    </nav>
+    <main style={{flex:1,marginLeft:220,padding:"28px 24px",minHeight:"100vh"}} id="main-area">
+      {page==="dashboard"&&<Dashboard data={data} user={user} setPage={setPage}/>}
+      {page==="calendario"&&<Calendario data={data} save={save}/>}
+      {page==="provas"&&<Provas data={data} save={save}/>}
+      {page==="simulados"&&<Simulados data={data} save={save}/>}
+      {page==="sas"&&<SasPage data={data} save={save}/>}
+      {page==="amigos"&&<Amigos data={data} save={save} user={user}/>}
+      {page==="config"&&<Config data={data} save={save}/>}
+    </main>
+  </div>;
+}
 
-      {/* Content */}
-      <main style={{flex:1,marginLeft:220,padding:"28px 24px",minHeight:"100vh"}} id="main-area">
-        {page==="dashboard"&&<DashboardPage data={data} user={user}/>}
-        {page==="provas"&&<ProvasPage data={data} saveData={saveData}/>}
-        {page==="simulados"&&<SimuladosPage data={data} saveData={saveData}/>}
-        {page==="sas"&&<SasPage data={data} saveData={saveData}/>}
-        {page==="amigos"&&<AmigosPage data={data} saveData={saveData} user={user}/>}
-        {page==="config"&&<ConfigPage data={data} saveData={saveData}/>}
-      </main>
+// ── DASHBOARD ─────────────────────────────────────────────────
+function Dashboard({data,user,setPage}){
+  const {provas,simulados,sas,eventos}=data;
+  function med(mat){
+    const a=[];
+    provas.filter(p=>p.materia===mat).forEach(p=>a.push(CONCEITO_ORDEM[p.conceito]));
+    simulados.filter(s=>s.materia===mat).forEach(s=>a.push(CONCEITO_ORDEM[pctToC(s.pct)]));
+    const sm=sas.filter(s=>s.materia===mat);
+    if(sm.length){const mp=sm.reduce((x,b)=>x+b.pct,0)/sm.length;a.push(CONCEITO_ORDEM[pctToC(mp)]);}
+    if(!a.length)return null;
+    return CONCEITOS[Math.round(a.reduce((x,b)=>x+b,0)/a.length)];
+  }
+  const stats=MATERIAS.map(m=>({m,c:med(m)})).filter(s=>s.c);
+  const mg=stats.length?CONCEITOS[Math.round(stats.map(s=>CONCEITO_ORDEM[s.c]).reduce((a,b)=>a+b,0)/stats.length)]:null;
+  const total=provas.length+simulados.length+sas.length;
+  const prox=useMemo(()=>(eventos||[]).filter(e=>!e.concluido&&daysUntil(e.data)>=0).sort((a,b)=>a.data.localeCompare(b.data)).slice(0,4),[eventos]);
+  const rec=[...provas.map(p=>({...p,tipo:"Prova",cf:p.conceito})),...simulados.map(s=>({...s,tipo:"Simulado",cf:pctToC(s.pct)})),...sas.map(s=>({...s,tipo:"SAS",cf:pctToC(s.pct)}))].slice(-6).reverse();
 
-      <style>{`
-        @media(max-width:768px){
-          #main-area{margin-left:0!important;padding:14px!important;padding-bottom:76px!important;}
-          aside{display:none!important;}
-          #mob-nav{display:flex!important;}
-        }
-        button:hover{filter:brightness(1.1);}
-        select option{background:#1e293b;color:#f1f5f9;}
-      `}</style>
+  return <div className="fade-in">
+    <div style={{marginBottom:26}}><h1 style={{fontSize:24,fontWeight:800,color:"#fff",letterSpacing:"-0.5px"}}>Olá, {(user.nome||user.email).split(" ")[0]} 👋</h1><p style={{color:"#475569",fontSize:13,marginTop:3}}>{user.serie?" "+user.serie+" · ":""}Boletim digital.</p></div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:14,marginBottom:22}}>
+      {[{l:"Nota Geral",v:mg,icon:"🏆",isC:true},{l:"Total de Notas",v:total,icon:"📋"},{l:"Matérias",v:stats.length,icon:"📚"},{l:"Próx. Avaliações",v:prox.length,icon:"📅"}].map((k,i)=><div key={i} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:"18px 16px",position:"relative",overflow:"hidden"}}><div style={{position:"absolute",top:12,right:14,fontSize:20,opacity:0.35}}>{k.icon}</div><p style={{fontSize:10,fontWeight:700,color:"#475569",marginBottom:8,letterSpacing:"0.5px"}}>{k.l.toUpperCase()}</p>{k.isC&&k.v?<CTag c={k.v} sz="lg"/>:<p style={{fontSize:30,fontWeight:800,color:k.v?"#fff":"#334155"}}>{k.v??0}</p>}</div>)}
     </div>
-  );
-}
-
-// ============================================================
-// DASHBOARD
-// ============================================================
-function DashboardPage({ data, user }) {
-  const { provas, simulados, sas } = data;
-
-  function calcMedia(mat) {
-    const all = [];
-    provas.filter(p=>p.materia===mat).forEach(p=>all.push(CONCEITO_ORDEM[p.conceito]));
-    simulados.filter(s=>s.materia===mat).forEach(s=>all.push(CONCEITO_ORDEM[percentToConceito(s.pct)]));
-    const sasM = sas.filter(s=>s.materia===mat);
-    if(sasM.length){const mp=sasM.reduce((a,b)=>a+b.pct,0)/sasM.length;all.push(CONCEITO_ORDEM[percentToConceito(mp)]);}
-    if(!all.length)return null;
-    return CONCEITOS[Math.round(all.reduce((a,b)=>a+b,0)/all.length)];
-  }
-
-  const stats = MATERIAS_DEFAULT.map(m=>({m,c:calcMedia(m)})).filter(s=>s.c);
-  const mediaGeral = stats.length ? CONCEITOS[Math.round(stats.map(s=>CONCEITO_ORDEM[s.c]).reduce((a,b)=>a+b,0)/stats.length)] : null;
-  const total = provas.length+simulados.length+sas.length;
-
-  const recentes = [
-    ...provas.map(p=>({...p,tipo:"Prova",cf:p.conceito})),
-    ...simulados.map(s=>({...s,tipo:"Simulado",cf:percentToConceito(s.pct)})),
-    ...sas.map(s=>({...s,tipo:"SAS",cf:percentToConceito(s.pct)})),
-  ].slice(-6).reverse();
-
-  return (
-    <div>
-      <div style={{marginBottom:26}}>
-        <h1 style={{fontSize:24,fontWeight:800,color:"#fff",letterSpacing:"-0.5px"}}>Olá, {(user.nome||user.username).split(" ")[0]} 👋</h1>
-        <p style={{color:"#475569",fontSize:13,marginTop:3}}>Aqui está o seu boletim digital.</p>
-      </div>
-
-      {/* KPI cards */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:14,marginBottom:24}}>
-        {[
-          {l:"Nota Geral",v:mediaGeral,icon:"🏆",type:"c"},
-          {l:"Total de Notas",v:total,icon:"📋"},
-          {l:"Matérias com Nota",v:stats.length,icon:"📚"},
-          {l:"SAS Realizados",v:sas.length,icon:"📅"},
-        ].map((k,i)=>(
-          <div key={i} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:"18px 16px",position:"relative",overflow:"hidden"}}>
-            <div style={{position:"absolute",top:12,right:14,fontSize:20,opacity:0.4}}>{k.icon}</div>
-            <p style={{fontSize:11,fontWeight:700,color:"#475569",marginBottom:8,letterSpacing:"0.5px"}}>{k.l.toUpperCase()}</p>
-            {k.type==="c"&&k.v ? <ConceitoTag conceito={k.v} size="lg"/> : <p style={{fontSize:30,fontWeight:800,color:k.v?"#fff":"#334155"}}>{k.v??0}</p>}
-          </div>
-        ))}
-      </div>
-
-      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:18}}>
-        {/* Subject grid */}
-        <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:18,padding:22}}>
-          <h2 style={{fontSize:14,fontWeight:700,color:"#94a3b8",marginBottom:18,letterSpacing:"0.5px"}}>DESEMPENHO POR MATÉRIA</h2>
-          {stats.length===0 ? (
-            <div style={{textAlign:"center",padding:"32px 0",color:"#334155"}}>
-              <p style={{fontSize:32,marginBottom:8}}>📚</p>
-              <p style={{fontSize:13}}>Nenhuma nota registrada ainda.</p>
-              <p style={{fontSize:12,marginTop:4,color:"#1e293b"}}>Use o menu lateral para começar!</p>
-            </div>
-          ) : (
-            <div style={{display:"flex",flexDirection:"column",gap:11}}>
-              {stats.map(({m,c})=>(
-                <div key={m} style={{display:"flex",alignItems:"center",gap:12}}>
-                  <span style={{width:108,fontSize:12,color:"#64748b",flexShrink:0,fontWeight:500}}>{m}</span>
-                  <ProgressBar conceito={c}/>
-                  <ConceitoTag conceito={c} size="sm"/>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Arcs */}
-        <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:18,padding:22}}>
-          <h2 style={{fontSize:14,fontWeight:700,color:"#94a3b8",marginBottom:18,letterSpacing:"0.5px"}}>TOP MATÉRIAS</h2>
-          {stats.length===0 ? (
-            <div style={{textAlign:"center",padding:"32px 0",color:"#334155"}}><p style={{fontSize:13}}>Sem dados ainda.</p></div>
-          ) : (
-            <div style={{display:"flex",flexDirection:"column",gap:12,alignItems:"center"}}>
-              {stats.sort((a,b)=>CONCEITO_ORDEM[b.c]-CONCEITO_ORDEM[a.c]).slice(0,4).map(({m,c})=>(
-                <div key={m} style={{display:"flex",alignItems:"center",gap:12,width:"100%"}}>
-                  <ProgressArc conceito={c}/>
-                  <span style={{fontSize:12,color:"#64748b",fontWeight:500}}>{m}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Recent */}
-      {recentes.length>0&&(
-        <div style={{marginTop:18,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:18,padding:22}}>
-          <h2 style={{fontSize:14,fontWeight:700,color:"#94a3b8",marginBottom:14,letterSpacing:"0.5px"}}>LANÇAMENTOS RECENTES</h2>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10}}>
-            {recentes.map((n,i)=>(
-              <div key={i} style={{padding:"12px 14px",background:"rgba(255,255,255,0.02)",borderRadius:12,border:"1px solid rgba(255,255,255,0.05)"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                  <span style={{fontSize:10,fontWeight:700,color:"#6366f1",background:"#6366f115",padding:"2px 8px",borderRadius:6,letterSpacing:"0.5px"}}>{n.tipo}</span>
-                  <ConceitoTag conceito={n.cf} size="sm"/>
-                </div>
-                <p style={{fontSize:13,fontWeight:600,color:"#cbd5e1"}}>{n.materia}</p>
-                {n.trimestre&&<p style={{fontSize:11,color:"#334155",marginTop:2}}>{n.trimestre}</p>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============================================================
-// PROVAS
-// ============================================================
-function ProvasPage({ data, saveData }) {
-  const [form, setForm] = useState({materia:MATERIAS_DEFAULT[0],trimestre:TRIMESTRES[0],conceito:"B"});
-  const [ok, setOk] = useState(false);
-
-  function add() {
-    saveData({...data,provas:[...data.provas,{...form,id:Date.now()}]});
-    setOk(true); setTimeout(()=>setOk(false),2000);
-  }
-  function del(id){saveData({...data,provas:data.provas.filter(p=>p.id!==id)});}
-
-  return (
-    <Page title="Provas Comuns" icon="✏️" desc="Registre o conceito obtido nas suas provas.">
-      <TwoCol>
-        <Card title="Nova Prova">
-          <div style={{display:"flex",flexDirection:"column",gap:14}}>
-            <Field label="Matéria"><Sel value={form.materia} onChange={v=>setForm({...form,materia:v})} opts={MATERIAS_DEFAULT}/></Field>
-            <Field label="Trimestre"><Sel value={form.trimestre} onChange={v=>setForm({...form,trimestre:v})} opts={TRIMESTRES}/></Field>
-            <Field label="Conceito Obtido">
-              <div style={{display:"flex",gap:8}}>
-                {CONCEITOS.map(c=>(
-                  <button key={c} onClick={()=>setForm({...form,conceito:c})} style={{
-                    flex:1,padding:"10px 0",borderRadius:9,border:`2px solid ${form.conceito===c?conceitoColor(c):"rgba(255,255,255,0.08)"}`,
-                    background:form.conceito===c?conceitoColor(c)+"20":"transparent",
-                    color:form.conceito===c?conceitoColor(c):"#475569",
-                    cursor:"pointer",fontWeight:800,fontSize:14,fontFamily:"inherit",
-                  }}>{c}</button>
-                ))}
-              </div>
-            </Field>
-            <BtnPrimary onClick={add}>{ok?"✓ Salvo!":"Registrar Prova"}</BtnPrimary>
-          </div>
-        </Card>
-        <Card title={`Provas Registradas (${data.provas.length})`}>
-          {data.provas.length===0?<Empty/>:(
-            <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:380,overflowY:"auto"}}>
-              {[...data.provas].reverse().map(p=>(
-                <NoteRow key={p.id} title={p.materia} sub={p.trimestre} conceito={p.conceito} onDel={()=>del(p.id)}/>
-              ))}
-            </div>
-          )}
-        </Card>
-      </TwoCol>
-    </Page>
-  );
-}
-
-// ============================================================
-// SIMULADOS
-// ============================================================
-function SimuladosPage({ data, saveData }) {
-  const [form, setForm] = useState({materia:MATERIAS_DEFAULT[0],trimestre:TRIMESTRES[0],acertos:"",total:""});
-  const [ok,setOk]=useState(false);
-  const pct = form.acertos&&form.total&&+form.total>0 ? Math.round((+form.acertos/+form.total)*100) : null;
-  const c = pct!==null?percentToConceito(pct):null;
-
-  function add(){
-    if(pct===null)return;
-    saveData({...data,simulados:[...data.simulados,{...form,acertos:+form.acertos,total:+form.total,pct,id:Date.now()}]});
-    setForm({...form,acertos:"",total:""});
-    setOk(true);setTimeout(()=>setOk(false),2000);
-  }
-  function del(id){saveData({...data,simulados:data.simulados.filter(s=>s.id!==id)});}
-
-  return (
-    <Page title="Simulados" icon="⚗️" desc="Insira seus acertos e veja o conceito calculado automaticamente.">
-      <TwoCol>
-        <Card title="Novo Simulado">
-          <div style={{display:"flex",flexDirection:"column",gap:14}}>
-            <Field label="Matéria"><Sel value={form.materia} onChange={v=>setForm({...form,materia:v})} opts={MATERIAS_DEFAULT}/></Field>
-            <Field label="Trimestre"><Sel value={form.trimestre} onChange={v=>setForm({...form,trimestre:v})} opts={TRIMESTRES}/></Field>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <Field label="Acertos"><Inp type="number" min="0" value={form.acertos} onChange={v=>setForm({...form,acertos:v})} placeholder="35"/></Field>
-              <Field label="Total de Questões"><Inp type="number" min="1" value={form.total} onChange={v=>setForm({...form,total:v})} placeholder="45"/></Field>
-            </div>
-            {c&&(
-              <div style={{padding:"14px 16px",borderRadius:12,background:conceitoColor(c)+"15",border:`1px solid ${conceitoColor(c)}30`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                <div>
-                  <p style={{fontSize:11,color:"#64748b",marginBottom:3}}>RESULTADO</p>
-                  <p style={{fontSize:22,fontWeight:800,color:"#fff"}}>{pct}%</p>
-                </div>
-                <ConceitoTag conceito={c} size="lg"/>
-              </div>
-            )}
-            <BtnPrimary onClick={add} disabled={!c}>{ok?"✓ Salvo!":"Registrar Simulado"}</BtnPrimary>
-          </div>
-        </Card>
-        <Card title={`Simulados Registrados (${data.simulados.length})`}>
-          {data.simulados.length===0?<Empty/>:(
-            <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:380,overflowY:"auto"}}>
-              {[...data.simulados].reverse().map(s=>(
-                <NoteRow key={s.id} title={s.materia} sub={`${s.trimestre} · ${s.acertos}/${s.total} (${s.pct}%)`} conceito={percentToConceito(s.pct)} onDel={()=>del(s.id)}/>
-              ))}
-            </div>
-          )}
-        </Card>
-      </TwoCol>
-    </Page>
-  );
-}
-
-// ============================================================
-// SAS
-// ============================================================
-function SasPage({ data, saveData }) {
-  const [sem, setSem] = useState("impar");
-  const [form, setForm] = useState({});
-  const [ok, setOk] = useState(false);
-  const mats = sem==="impar" ? (data.config?.sasImpar||[]) : (data.config?.sasPar||[]);
-
-  function add() {
-    const novos = mats.map(mat=>{
-      const ac=+(form[mat]??0);
-      return {id:Date.now()+Math.random(),materia:mat,acertos:ac,total:4,pct:Math.round(ac/4*100),semana:sem,ts:Date.now()};
-    });
-    saveData({...data,sas:[...data.sas,...novos]});
-    setForm({}); setOk(true); setTimeout(()=>setOk(false),2000);
-  }
-
-  const sasByMat = useMemo(()=>{
-    const r = {};
-    MATERIAS_DEFAULT.forEach(m=>{
-      const rs=data.sas.filter(s=>s.materia===m);
-      if(rs.length){const mp=Math.round(rs.reduce((a,b)=>a+b.pct,0)/rs.length);r[m]={mp,c:percentToConceito(mp),count:rs.length};}
-    });
-    return r;
-  },[data.sas]);
-
-  return (
-    <Page title="SAS — Avaliação Semanal" icon="📅" desc="Registre seus acertos no SAS (0 a 4 questões por matéria).">
-      <TwoCol>
-        <Card title="Registrar SAS da Semana">
-          <div style={{display:"flex",flexDirection:"column",gap:16}}>
-            <Field label="Tipo de Semana">
-              <div style={{display:"flex",gap:8}}>
-                {["impar","par"].map(s=>(
-                  <button key={s} onClick={()=>setSem(s)} style={{
-                    flex:1,padding:"9px 0",borderRadius:9,border:`2px solid ${sem===s?"#6366f1":"rgba(255,255,255,0.08)"}`,
-                    background:sem===s?"#6366f120":"transparent",color:sem===s?"#a5b4fc":"#475569",
-                    cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"inherit",
-                  }}>Semana {s==="impar"?"Ímpar":"Par"}</button>
-                ))}
-              </div>
-            </Field>
-            {mats.length===0?(
-              <p style={{color:"#475569",fontSize:13,padding:"10px 0"}}>⚠️ Configure as matérias do SAS nas Configurações.</p>
-            ):mats.map(mat=>{
-              const ac = form[mat]??null;
-              const pct = ac!==null?Math.round(ac/4*100):null;
-              return (
-                <div key={mat} style={{display:"flex",alignItems:"center",gap:10}}>
-                  <span style={{flex:1,fontSize:12,color:"#64748b",fontWeight:500}}>{mat}</span>
-                  <div style={{display:"flex",gap:5}}>
-                    {[0,1,2,3,4].map(n=>(
-                      <button key={n} onClick={()=>setForm({...form,[mat]:n})} style={{
-                        width:32,height:32,borderRadius:8,border:`2px solid ${form[mat]===n?"#6366f1":"rgba(255,255,255,0.1)"}`,
-                        background:form[mat]===n?"#6366f130":"rgba(255,255,255,0.02)",
-                        color:form[mat]===n?"#a5b4fc":"#475569",cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"inherit",
-                      }}>{n}</button>
-                    ))}
-                  </div>
-                  {pct!==null&&<ConceitoTag conceito={percentToConceito(pct)} size="sm"/>}
-                </div>
-              );
-            })}
-            {mats.length>0&&<BtnPrimary onClick={add}>{ok?"✓ SAS Salvo!":"Registrar Semana"}</BtnPrimary>}
-          </div>
-        </Card>
-
-        <Card title="Médias SAS por Matéria">
-          {Object.keys(sasByMat).length===0?<Empty msg="Nenhum SAS registrado ainda."/>:(
-            <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              {Object.entries(sasByMat).map(([m,{mp,c,count}])=>(
-                <div key={m} style={{display:"flex",alignItems:"center",gap:10}}>
-                  <span style={{width:108,fontSize:12,color:"#64748b",flexShrink:0}}>{m}</span>
-                  <ProgressBar conceito={c}/>
-                  <span style={{fontSize:10,color:"#334155",width:32,textAlign:"right",flexShrink:0}}>{mp}%</span>
-                  <ConceitoTag conceito={c} size="sm"/>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      </TwoCol>
-
-      {data.sas.length>0&&(
-        <div style={{marginTop:20}}>
-          <Card title={`Histórico SAS (${data.sas.length} registros)`}>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:8,maxHeight:260,overflowY:"auto"}}>
-              {[...data.sas].reverse().slice(0,24).map((s,i)=>(
-                <div key={i} style={{padding:"10px 12px",background:"rgba(255,255,255,0.02)",borderRadius:10,border:"1px solid rgba(255,255,255,0.05)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <div>
-                    <p style={{fontSize:12,fontWeight:600,color:"#94a3b8"}}>{s.materia}</p>
-                    <p style={{fontSize:10,color:"#334155"}}>{s.acertos}/4 · {s.semana==="impar"?"Ímpar":"Par"}</p>
-                  </div>
-                  <ConceitoTag conceito={percentToConceito(s.pct)} size="sm"/>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </div>
-      )}
-    </Page>
-  );
-}
-
-// ============================================================
-// AMIGOS / COMPARAÇÃO
-// ============================================================
-function AmigosPage({ data, saveData, user }) {
-  const [q, setQ] = useState("");
-  const [found, setFound] = useState(null);
-  const [notFound, setNF] = useState(false);
-  const [cmp, setCmp] = useState(null);
-
-  function search() {
-    setNF(false); setFound(null);
-    const all = JSON.parse(localStorage.getItem("sn_users")||"[]");
-    const u = all.find(u=>u.username===q.trim()&&u.id!==user.id);
-    if(u)setFound(u); else setNF(true);
-  }
-
-  function addFriend() {
-    if(!found||data.amigos.find(a=>a.id===found.id))return;
-    saveData({...data,amigos:[...data.amigos,{id:found.id,username:found.username,nome:found.nome}]});
-    setFound(null); setQ("");
-  }
-
-  function getFD(id){try{const d=localStorage.getItem(`sn_data_${id}`);return d?JSON.parse(d):{provas:[],simulados:[],sas:[]};}catch{return{provas:[],simulados:[],sas:[]};}}
-
-  function getMedia(d,mat){
-    const all=[];
-    (d.provas||[]).filter(p=>p.materia===mat).forEach(p=>all.push(CONCEITO_ORDEM[p.conceito]));
-    (d.simulados||[]).filter(s=>s.materia===mat).forEach(s=>all.push(CONCEITO_ORDEM[percentToConceito(s.pct)]));
-    const sm=(d.sas||[]).filter(s=>s.materia===mat);
-    if(sm.length){const mp=sm.reduce((a,b)=>a+b.pct,0)/sm.length;all.push(CONCEITO_ORDEM[percentToConceito(mp)]);}
-    if(!all.length)return null;
-    return CONCEITOS[Math.round(all.reduce((a,b)=>a+b,0)/all.length)];
-  }
-
-  const frd = cmp?getFD(cmp.id):null;
-
-  return (
-    <Page title="Amigos & Comparação" icon="👥" desc="Adicione amigos e compare seus boletins lado a lado.">
-      <Card title="Buscar por @usuário" style={{marginBottom:20}}>
-        <div style={{display:"flex",gap:10}}>
-          <Inp value={q} onChange={setQ} placeholder="@username do seu amigo" onKeyDown={e=>e.key==="Enter"&&search()}/>
-          <BtnPrimary onClick={search} style={{whiteSpace:"nowrap"}}>Buscar</BtnPrimary>
-        </div>
-        {notFound&&<p style={{color:"#ef4444",fontSize:13,marginTop:10}}>Usuário não encontrado.</p>}
-        {found&&(
-          <div style={{marginTop:14,padding:"12px 16px",background:"rgba(99,102,241,0.08)",border:"1px solid rgba(99,102,241,0.2)",borderRadius:12,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-            <div>
-              <p style={{color:"#e2e8f0",fontWeight:700,fontSize:14}}>{found.nome||found.username}</p>
-              <p style={{color:"#64748b",fontSize:12}}>@{found.username}</p>
-            </div>
-            <BtnPrimary onClick={addFriend}>+ Adicionar</BtnPrimary>
-          </div>
-        )}
+    <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:18,marginBottom:18}}>
+      <Card title="Desempenho por Matéria">
+        {stats.length===0?<div style={{textAlign:"center",padding:"32px 0",color:"#334155"}}><p style={{fontSize:32,marginBottom:8}}>📚</p><p style={{fontSize:13}}>Nenhuma nota ainda.</p></div>:
+        <div style={{display:"flex",flexDirection:"column",gap:11}}>{stats.map(({m,c})=><div key={m} style={{display:"flex",alignItems:"center",gap:12}}><span style={{width:108,fontSize:12,color:"#64748b",flexShrink:0}}>{m}</span><PBar c={c}/><CTag c={c} sz="sm"/></div>)}</div>}
       </Card>
-
-      <div style={{display:"grid",gridTemplateColumns:cmp?"1fr 2fr":"1fr",gap:20}}>
-        <Card title={`Meus Amigos (${data.amigos.length})`}>
-          {data.amigos.length===0?<Empty msg="Nenhum amigo ainda."/>:(
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              {data.amigos.map(a=>(
-                <div key={a.id} style={{
-                  display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",borderRadius:11,
-                  background:cmp?.id===a.id?"rgba(99,102,241,0.12)":"rgba(255,255,255,0.02)",
-                  border:cmp?.id===a.id?"1px solid rgba(99,102,241,0.3)":"1px solid rgba(255,255,255,0.04)",
-                }}>
-                  <div style={{display:"flex",alignItems:"center",gap:10}}>
-                    <div style={{width:28,height:28,borderRadius:"50%",background:"linear-gradient(135deg,#6366f1,#8b5cf6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:"#fff",flexShrink:0}}>
-                      {(a.nome||a.username)[0].toUpperCase()}
-                    </div>
-                    <div>
-                      <p style={{fontSize:12,fontWeight:700,color:"#cbd5e1"}}>{a.nome||a.username}</p>
-                      <p style={{fontSize:10,color:"#475569"}}>@{a.username}</p>
-                    </div>
-                  </div>
-                  <div style={{display:"flex",gap:6}}>
-                    <button onClick={()=>setCmp(cmp?.id===a.id?null:a)} style={{padding:"4px 10px",borderRadius:7,border:"1px solid rgba(99,102,241,0.3)",background:"rgba(99,102,241,0.1)",color:"#a5b4fc",cursor:"pointer",fontFamily:"inherit",fontSize:11,fontWeight:700}}>
-                      {cmp?.id===a.id?"Fechar":"Comparar"}
-                    </button>
-                    <button onClick={()=>{saveData({...data,amigos:data.amigos.filter(f=>f.id!==a.id)});if(cmp?.id===a.id)setCmp(null);}} style={{background:"none",border:"none",cursor:"pointer",color:"#ef4444",fontSize:18,lineHeight:1}}>×</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-
-        {cmp&&frd&&(
-          <Card title={`Comparação: Você vs ${(cmp.nome||cmp.username).split(" ")[0]}`}>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,paddingBottom:12,borderBottom:"1px solid rgba(255,255,255,0.06)",marginBottom:8}}>
-              <span style={{fontSize:10,fontWeight:700,color:"#475569",letterSpacing:"0.5px"}}>MATÉRIA</span>
-              <span style={{fontSize:10,fontWeight:700,color:"#818cf8",textAlign:"center"}}>VOCÊ</span>
-              <span style={{fontSize:10,fontWeight:700,color:"#f472b6",textAlign:"center"}}>{(cmp.nome||cmp.username).split(" ")[0].toUpperCase()}</span>
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:360,overflowY:"auto"}}>
-              {MATERIAS_DEFAULT.map(mat=>{
-                const myC=getMedia(data,mat), frC=getMedia(frd,mat);
-                if(!myC&&!frC)return null;
-                const myO=myC?CONCEITO_ORDEM[myC]:-1, frO=frC?CONCEITO_ORDEM[frC]:-1;
-                return (
-                  <div key={mat} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,alignItems:"center",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
-                    <span style={{fontSize:12,color:"#64748b"}}>{mat}</span>
-                    <div style={{textAlign:"center"}}>{myC?<ConceitoTag conceito={myC} size="sm"/>:<span style={{fontSize:11,color:"#334155"}}>—</span>}</div>
-                    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-                      {frC?<ConceitoTag conceito={frC} size="sm"/>:<span style={{fontSize:11,color:"#334155"}}>—</span>}
-                      {myC&&frC&&myO!==frO&&<span style={{fontSize:11}}>{myO>frO?"🟢":"🔴"}</span>}
-                    </div>
-                  </div>
-                );
-              }).filter(Boolean)}
-            </div>
-            <p style={{fontSize:10,color:"#334155",marginTop:12}}>🟢 = Você está melhor · 🔴 = Amigo está melhor</p>
-          </Card>
-        )}
-      </div>
-    </Page>
-  );
-}
-
-// ============================================================
-// CONFIG
-// ============================================================
-function ConfigPage({ data, saveData }) {
-  const [cfg, setCfg] = useState(()=>data.config||{numSimulados:5,sasImpar:["Matemática","Português","Inglês","Física","Química"],sasPar:["História","Geografia","Ciências","Biologia","Filosofia"]});
-  const [ok,setOk]=useState(false);
-
-  function toggle(key,mat){
-    const cur=cfg[key]||[];
-    setCfg({...cfg,[key]:cur.includes(mat)?cur.filter(m=>m!==mat):[...cur,mat]});
-  }
-
-  function save(){saveData({...data,config:cfg});setOk(true);setTimeout(()=>setOk(false),2000);}
-
-  const MatGrid = ({ckey,color})=>(
-    <div style={{display:"flex",flexWrap:"wrap",gap:8,marginTop:14}}>
-      {MATERIAS_DEFAULT.map(m=>{
-        const sel=cfg[ckey]?.includes(m);
-        return(
-          <button key={m} onClick={()=>toggle(ckey,m)} style={{
-            padding:"7px 13px",borderRadius:9,border:`1.5px solid ${sel?color:"rgba(255,255,255,0.08)"}`,
-            background:sel?color+"20":"transparent",color:sel?color:"#475569",
-            cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:600,
-          }}>{m}</button>
-        );
-      })}
-    </div>
-  );
-
-  return (
-    <Page title="Configurações" icon="⚙️" desc="Configure o sistema de avaliação de acordo com sua série.">
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:20}}>
-        <Card title="SAS — Semana Ímpar">
-          <p style={{fontSize:12,color:"#475569"}}>Selecione as matérias avaliadas na semana ímpar.</p>
-          <MatGrid ckey="sasImpar" color="#6366f1"/>
-          <p style={{marginTop:10,fontSize:11,color:"#334155"}}>{cfg.sasImpar?.length||0} matérias selecionadas</p>
-        </Card>
-        <Card title="SAS — Semana Par">
-          <p style={{fontSize:12,color:"#475569"}}>Selecione as matérias avaliadas na semana par.</p>
-          <MatGrid ckey="sasPar" color="#8b5cf6"/>
-          <p style={{marginTop:10,fontSize:11,color:"#334155"}}>{cfg.sasPar?.length||0} matérias selecionadas</p>
-        </Card>
-      </div>
-      <Card title="Número de Simulados no Ano">
-        <p style={{fontSize:12,color:"#475569",marginBottom:14}}>Selecione conforme sua série escolar.</p>
-        <div style={{display:"flex",gap:12}}>
-          {[3,5,6].map(n=>(
-            <button key={n} onClick={()=>setCfg({...cfg,numSimulados:n})} style={{
-              flex:1,padding:"16px 0",borderRadius:12,border:`2px solid ${cfg.numSimulados===n?"#6366f1":"rgba(255,255,255,0.08)"}`,
-              background:cfg.numSimulados===n?"#6366f120":"transparent",
-              color:cfg.numSimulados===n?"#a5b4fc":"#475569",
-              cursor:"pointer",fontFamily:"inherit",fontWeight:800,fontSize:20,
-            }}>{n}</button>
-          ))}
-        </div>
+      <Card title="Top Matérias">
+        {stats.length===0?<Empty msg="Sem dados."/>:
+        <div style={{display:"flex",flexDirection:"column",gap:12,alignItems:"center"}}>{stats.sort((a,b)=>CONCEITO_ORDEM[b.c]-CONCEITO_ORDEM[a.c]).slice(0,4).map(({m,c})=><div key={m} style={{display:"flex",alignItems:"center",gap:12,width:"100%"}}><PArc c={c}/><span style={{fontSize:12,color:"#64748b"}}>{m}</span></div>)}</div>}
       </Card>
-      <div style={{marginTop:16}}>
-        <BtnPrimary onClick={save}>{ok?"✓ Configurações salvas!":"Salvar Configurações"}</BtnPrimary>
+    </div>
+    {prox.length>0&&<Card title="Próximas Avaliações" style={{marginBottom:18}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10}}>
+        {prox.map(e=>{const d=daysUntil(e.data);return <div key={e.id} style={{padding:"12px 14px",background:"rgba(255,255,255,0.02)",borderRadius:12,border:`1px solid ${TIPO_COLOR[e.tipo]||"#6366f1"}25`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><span style={{fontSize:10,fontWeight:700,color:TIPO_COLOR[e.tipo]||"#6366f1",background:(TIPO_COLOR[e.tipo]||"#6366f1")+"18",padding:"2px 8px",borderRadius:6}}>{e.tipo}</span><span style={{fontSize:11,fontWeight:700,color:d===0?"#f87171":d<=3?"#f97316":"#64748b"}}>{d===0?"Hoje!":d===1?"Amanhã":`${d}d`}</span></div>
+          <p style={{fontSize:13,fontWeight:700,color:"#cbd5e1"}}>{e.materia||e.titulo}</p>
+          <p style={{fontSize:11,color:"#475569",marginTop:2}}>{fmtDate(e.data)}{e.trimestre?" · "+e.trimestre:""}</p>
+        </div>;})}
       </div>
-    </Page>
-  );
+      <button onClick={()=>setPage("calendario")} style={{marginTop:12,background:"none",border:"none",cursor:"pointer",color:"#818cf8",fontSize:12,fontWeight:600,fontFamily:"inherit",padding:0}}>Ver calendário completo →</button>
+    </Card>}
+    {rec.length>0&&<Card title="Lançamentos Recentes">
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10}}>
+        {rec.map((n,i)=><div key={i} style={{padding:"12px 14px",background:"rgba(255,255,255,0.02)",borderRadius:12,border:"1px solid rgba(255,255,255,0.05)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><span style={{fontSize:10,fontWeight:700,color:"#6366f1",background:"#6366f115",padding:"2px 8px",borderRadius:6}}>{n.tipo}</span><CTag c={n.cf} sz="sm"/></div>
+          <p style={{fontSize:13,fontWeight:600,color:"#cbd5e1"}}>{n.materia}</p>
+          {n.trimestre&&<p style={{fontSize:11,color:"#334155",marginTop:2}}>{n.trimestre}</p>}
+        </div>)}
+      </div>
+    </Card>}
+  </div>;
 }
 
-// ============================================================
-// SHARED UI PRIMITIVES
-// ============================================================
-function Page({title,icon,desc,children}){
-  return(
-    <div>
-      <div style={{marginBottom:22}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}>
-          <span style={{fontSize:20}}>{icon}</span>
-          <h1 style={{fontSize:22,fontWeight:800,color:"#fff",letterSpacing:"-0.5px"}}>{title}</h1>
-        </div>
-        <p style={{color:"#475569",fontSize:13}}>{desc}</p>
+// ── CALENDÁRIO ────────────────────────────────────────────────
+function Calendario({data,save}){
+  const [view,setView]=useState("lista");
+  const [modal,setModal]=useState(false);
+  const [edit,setEdit]=useState(null);
+  const [fil,setFil]=useState("Todos");
+  const [month,setMonth]=useState(()=>{const n=new Date();return{y:n.getFullYear(),m:n.getMonth()};});
+  const evts=data.eventos||[];
+
+  function saveEvt(e){
+    const nd=e.id&&evts.find(x=>x.id===e.id)?evts.map(x=>x.id===e.id?e:x):[...evts,{...e,id:Date.now()}];
+    save({...data,eventos:nd}); setModal(false); setEdit(null);
+  }
+  function delEvt(id){save({...data,eventos:evts.filter(e=>e.id!==id)});}
+  function tog(id){save({...data,eventos:evts.map(e=>e.id===id?{...e,concluido:!e.concluido}:e)});}
+
+  const fil2=evts.filter(e=>fil==="Todos"||e.tipo===fil).sort((a,b)=>a.data.localeCompare(b.data));
+  const grouped=useMemo(()=>{const g={};fil2.forEach(e=>{if(!g[e.data])g[e.data]=[];g[e.data].push(e);});return Object.entries(g).sort((a,b)=>a[0].localeCompare(b[0]));;},[fil2]);
+  const upcoming=grouped.filter(([d])=>daysUntil(d)>=0);
+  const past=grouped.filter(([d])=>daysUntil(d)<0).reverse();
+
+  // Month calendar
+  const MNAMES=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  function buildGrid(y,m){const f=new Date(y,m,1).getDay(),days=new Date(y,m+1,0).getDate(),c=[];for(let i=0;i<f;i++)c.push(null);for(let d=1;d<=days;d++)c.push(d);return c;}
+  const grid=buildGrid(month.y,month.m);
+  function evtsDay(d){const iso=`${month.y}-${String(month.m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;return evts.filter(e=>e.data===iso);}
+  const todayD=new Date();
+
+  return <Page title="Calendário de Avaliações" icon="🗓" desc="Visualize e gerencie todas as suas avaliações.">
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18,flexWrap:"wrap",gap:10}}>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+        {["lista","mes"].map(v=><button key={v} onClick={()=>setView(v)} style={{padding:"7px 14px",borderRadius:8,border:`1.5px solid ${view===v?"#6366f1":"rgba(255,255,255,0.08)"}`,background:view===v?"#6366f120":"transparent",color:view===v?"#a5b4fc":"#475569",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:12}}>{v==="lista"?"📋 Lista":"📆 Mês"}</button>)}
+        {["Todos","Prova","Simulado","SAS","Outro"].map(t=><button key={t} onClick={()=>setFil(t)} style={{padding:"7px 14px",borderRadius:8,border:`1.5px solid ${fil===t?(TIPO_COLOR[t]||"#6366f1"):"rgba(255,255,255,0.08)"}`,background:fil===t?(TIPO_COLOR[t]||"#6366f1")+"20":"transparent",color:fil===t?(TIPO_COLOR[t]||"#a5b4fc"):"#475569",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:12}}>{t}</button>)}
       </div>
-      {children}
+      <Btn onClick={()=>{setEdit(null);setModal(true);}}>+ Nova Avaliação</Btn>
     </div>
-  );
-}
-function Card({title,children,style={}}){
-  return(
-    <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:18,padding:22,...style}}>
-      {title&&<h3 style={{fontSize:14,fontWeight:700,color:"#94a3b8",marginBottom:18,letterSpacing:"0.5px"}}>{title.toUpperCase()}</h3>}
-      {children}
-    </div>
-  );
-}
-function TwoCol({children}){return<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>{children}</div>;}
-function Field({label,children}){return<div><label style={{display:"block",fontSize:10,fontWeight:700,color:"#475569",marginBottom:5,letterSpacing:"0.5px"}}>{label.toUpperCase()}</label>{children}</div>;}
-function Sel({value,onChange,opts}){return<select value={value} onChange={e=>onChange(e.target.value)} style={{width:"100%",padding:"10px 12px",borderRadius:9,border:"1.5px solid rgba(255,255,255,0.08)",background:"#1e293b",color:"#f1f5f9",fontSize:13,fontFamily:"inherit",outline:"none"}}>{opts.map(o=><option key={o}>{o}</option>)}</select>;}
-function Inp({value,onChange,placeholder,type="text",min,onKeyDown}){return<input type={type} min={min} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} onKeyDown={onKeyDown} style={{width:"100%",padding:"10px 12px",borderRadius:9,border:"1.5px solid rgba(255,255,255,0.08)",background:"#1e293b",color:"#f1f5f9",fontSize:13,fontFamily:"inherit",outline:"none"}}/>;}
-function BtnPrimary({onClick,children,disabled,style={}}){return<button onClick={onClick} disabled={disabled} style={{padding:"11px 18px",borderRadius:10,border:"none",cursor:disabled?"default":"pointer",background:disabled?"#334155":"linear-gradient(135deg,#6366f1,#8b5cf6)",color:"#fff",fontWeight:700,fontSize:13,fontFamily:"inherit",boxShadow:disabled?"none":"0 4px 16px #6366f130",transition:"all 0.15s",opacity:disabled?0.6:1,...style}}>{children}</button>;}
-function Empty({msg="Nenhum dado registrado ainda."}){return<div style={{textAlign:"center",padding:"28px 0",color:"#334155"}}><p style={{fontSize:28,marginBottom:6}}>📭</p><p style={{fontSize:12}}>{msg}</p></div>;}
-function NoteRow({title,sub,conceito,onDel}){
-  return(
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",background:"rgba(255,255,255,0.02)",borderRadius:10,border:"1px solid rgba(255,255,255,0.04)"}}>
+
+    {view==="mes"?<Card>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+        <button onClick={()=>setMonth(p=>{const d=new Date(p.y,p.m-1);return{y:d.getFullYear(),m:d.getMonth()};})} style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"#94a3b8",cursor:"pointer",padding:"6px 14px",fontFamily:"inherit",fontSize:16}}>‹</button>
+        <span style={{fontWeight:700,color:"#e2e8f0",fontSize:15}}>{MNAMES[month.m]} {month.y}</span>
+        <button onClick={()=>setMonth(p=>{const d=new Date(p.y,p.m+1);return{y:d.getFullYear(),m:d.getMonth()};})} style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"#94a3b8",cursor:"pointer",padding:"6px 14px",fontFamily:"inherit",fontSize:16}}>›</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:4}}>
+        {["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"].map(d=><div key={d} style={{textAlign:"center",fontSize:10,fontWeight:700,color:"#475569",padding:"4px 0"}}>{d}</div>)}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+        {grid.map((d,i)=>{
+          if(!d)return <div key={i}/>;
+          const de=evtsDay(d);
+          const isT=d===todayD.getDate()&&month.m===todayD.getMonth()&&month.y===todayD.getFullYear();
+          return <div key={i} style={{minHeight:68,borderRadius:10,border:`1px solid ${isT?"rgba(99,102,241,0.4)":"rgba(255,255,255,0.05)"}`,background:isT?"rgba(99,102,241,0.08)":"rgba(255,255,255,0.01)",padding:"6px 6px 4px",cursor:"default",position:"relative"}}>
+            <span style={{fontSize:12,fontWeight:isT?800:500,color:isT?"#a5b4fc":"#64748b"}}>{d}</span>
+            <div style={{marginTop:3,display:"flex",flexDirection:"column",gap:2}}>
+              {de.slice(0,3).map((e,j)=><div key={j} onClick={()=>{setEdit(e);setModal(true);}} style={{fontSize:9,fontWeight:700,color:"#fff",background:TIPO_COLOR[e.tipo]||"#6366f1",borderRadius:4,padding:"1px 4px",textOverflow:"ellipsis",overflow:"hidden",whiteSpace:"nowrap",opacity:e.concluido?0.4:1,cursor:"pointer"}}>{e.materia||e.titulo}</div>)}
+              {de.length>3&&<span style={{fontSize:9,color:"#475569"}}>+{de.length-3}</span>}
+            </div>
+          </div>;
+        })}
+      </div>
+    </Card>:
+    <div style={{display:"flex",flexDirection:"column",gap:20}}>
       <div>
-        <p style={{fontSize:13,fontWeight:600,color:"#cbd5e1"}}>{title}</p>
-        <p style={{fontSize:11,color:"#475569"}}>{sub}</p>
+        <h3 style={{fontSize:12,fontWeight:700,color:"#6366f1",letterSpacing:"1px",marginBottom:12}}>PRÓXIMAS AVALIAÇÕES</h3>
+        {upcoming.length===0?<Card><Empty msg="Nenhuma avaliação agendada."/></Card>:upcoming.map(([ds,es])=><DGroup key={ds} ds={ds} es={es} onEdit={e=>{setEdit(e);setModal(true);}} onDel={delEvt} onTog={tog}/>)}
       </div>
-      <div style={{display:"flex",alignItems:"center",gap:10}}>
-        <ConceitoTag conceito={conceito} size="sm"/>
-        <button onClick={onDel} style={{background:"none",border:"none",cursor:"pointer",color:"#ef4444",fontSize:18,lineHeight:1,padding:"0 2px"}}>×</button>
+      {past.length>0&&<div>
+        <h3 style={{fontSize:12,fontWeight:700,color:"#334155",letterSpacing:"1px",marginBottom:12}}>AVALIAÇÕES PASSADAS</h3>
+        {past.map(([ds,es])=><DGroup key={ds} ds={ds} es={es} onEdit={e=>{setEdit(e);setModal(true);}} onDel={delEvt} onTog={tog} past/>)}
+      </div>}
+    </div>}
+    {modal&&<EvtModal evt={edit} onSave={saveEvt} onClose={()=>{setModal(false);setEdit(null);}}/>}
+  </Page>;
+}
+
+function DGroup({ds,es,onEdit,onDel,onTog,past}){
+  const d=daysUntil(ds);
+  const lbl=d===0?"Hoje!":d===1?"Amanhã":d<0?`${Math.abs(d)}d atrás`:d<=7?`Em ${d}d`:fmtDate(ds);
+  const uc=d===0?"#ef4444":d===1?"#f97316":d<=3?"#eab308":"#64748b";
+  return <div style={{marginBottom:12}}>
+    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+      <span style={{fontSize:12,fontWeight:700,color:past?"#334155":uc}}>{fmtDate(ds)}</span>
+      <span style={{fontSize:11,fontWeight:600,color:past?"#1e293b":uc,background:past?"#0f172a":uc+"18",padding:"1px 8px",borderRadius:99}}>{lbl}</span>
+      <div style={{flex:1,height:1,background:"rgba(255,255,255,0.04)"}}/>
+    </div>
+    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+      {es.map(e=><div key={e.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"rgba(255,255,255,0.02)",borderRadius:12,border:`1px solid ${TIPO_COLOR[e.tipo]||"#6366f1"}20`,opacity:e.concluido?0.45:1}}>
+        <button onClick={()=>onTog(e.id)} style={{width:18,height:18,borderRadius:5,border:`2px solid ${e.concluido?"#22c55e":"#334155"}`,background:e.concluido?"#22c55e":"transparent",cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{e.concluido&&<span style={{color:"#fff",fontSize:10,fontWeight:900}}>✓</span>}</button>
+        <div style={{flex:1}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}>
+            <span style={{fontSize:10,fontWeight:700,color:TIPO_COLOR[e.tipo]||"#6366f1",background:(TIPO_COLOR[e.tipo]||"#6366f1")+"18",padding:"1px 7px",borderRadius:6}}>{e.tipo}</span>
+            <span style={{fontSize:13,fontWeight:700,color:"#cbd5e1"}}>{e.materia||e.titulo}</span>
+          </div>
+          {e.descricao&&<p style={{fontSize:11,color:"#475569"}}>{e.descricao}</p>}
+          {e.trimestre&&<p style={{fontSize:11,color:"#334155"}}>{e.trimestre}</p>}
+        </div>
+        <div style={{display:"flex",gap:6}}>
+          <button onClick={()=>onEdit(e)} style={{background:"rgba(99,102,241,0.1)",border:"1px solid rgba(99,102,241,0.2)",borderRadius:7,color:"#818cf8",cursor:"pointer",padding:"4px 10px",fontFamily:"inherit",fontSize:11,fontWeight:600}}>Editar</button>
+          <button onClick={()=>onDel(e.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#ef4444",fontSize:16,lineHeight:1}}>×</button>
+        </div>
+      </div>)}
+    </div>
+  </div>;
+}
+
+function EvtModal({evt,onSave,onClose}){
+  const [f,setF]=useState(evt||{titulo:"",tipo:"Prova",materia:MATERIAS[0],data:todayISO(),trimestre:TRIMESTRES[0],descricao:"",concluido:false});
+  return <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+    <div className="modal-box fade-in">
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:22}}>
+        <h3 style={{fontSize:16,fontWeight:800,color:"#fff"}}>{evt?.id?"Editar Avaliação":"Nova Avaliação"}</h3>
+        <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:"#64748b",fontSize:22,lineHeight:1}}>×</button>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <Field label="Tipo">
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {["Prova","Simulado","SAS","Outro"].map(t=><button key={t} onClick={()=>setF({...f,tipo:t})} style={{padding:"7px 14px",borderRadius:8,border:`1.5px solid ${f.tipo===t?(TIPO_COLOR[t]||"#6366f1"):"rgba(255,255,255,0.08)"}`,background:f.tipo===t?(TIPO_COLOR[t]||"#6366f1")+"20":"transparent",color:f.tipo===t?(TIPO_COLOR[t]||"#a5b4fc"):"#475569",cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:12}}>{t}</button>)}
+          </div>
+        </Field>
+        <Field label="Matéria"><Sel value={f.materia} onChange={v=>setF({...f,materia:v})} opts={MATERIAS}/></Field>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <Field label="Data"><Inp type="date" value={f.data} onChange={v=>setF({...f,data:v})}/></Field>
+          <Field label="Trimestre"><Sel value={f.trimestre} onChange={v=>setF({...f,trimestre:v})} opts={TRIMESTRES}/></Field>
+        </div>
+        <Field label="Anotação (opcional)">
+          <textarea value={f.descricao} onChange={e=>setF({...f,descricao:e.target.value})} placeholder="Ex: Cap. 3 a 7, exercícios da apostila..." style={{width:"100%",padding:"10px 12px",borderRadius:9,border:"1.5px solid rgba(255,255,255,0.08)",background:"#1e293b",color:"#f1f5f9",fontSize:13,fontFamily:"inherit",outline:"none",resize:"vertical",minHeight:64}}/>
+        </Field>
+        <div style={{display:"flex",gap:10,marginTop:4}}>
+          <button onClick={onClose} style={{flex:1,padding:"11px",borderRadius:10,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#64748b",fontWeight:600,fontSize:13,fontFamily:"inherit",cursor:"pointer"}}>Cancelar</button>
+          <Btn onClick={()=>onSave(f)} style={{flex:2}}>Salvar Avaliação</Btn>
+        </div>
       </div>
     </div>
-  );
+  </div>;
 }
 
-// ============================================================
-// ROOT APP
-// ============================================================
+// ── PROVAS ────────────────────────────────────────────────────
+function Provas({data,save}){
+  const [f,setF]=useState({materia:MATERIAS[0],trimestre:TRIMESTRES[0],conceito:"B"});
+  const [ok,setOk]=useState(false);
+  function add(){save({...data,provas:[...data.provas,{...f,id:Date.now()}]});setOk(true);setTimeout(()=>setOk(false),2000);}
+  function del(id){save({...data,provas:data.provas.filter(p=>p.id!==id)});}
+  return <Page title="Provas Comuns" icon="✏️" desc="Registre o conceito obtido nas suas provas."><TwoCol>
+    <Card title="Nova Prova"><div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <Field label="Matéria"><Sel value={f.materia} onChange={v=>setF({...f,materia:v})} opts={MATERIAS}/></Field>
+      <Field label="Trimestre"><Sel value={f.trimestre} onChange={v=>setF({...f,trimestre:v})} opts={TRIMESTRES}/></Field>
+      <Field label="Conceito Obtido"><div style={{display:"flex",gap:8}}>{CONCEITOS.map(c=><button key={c} onClick={()=>setF({...f,conceito:c})} style={{flex:1,padding:"10px 0",borderRadius:9,border:`2px solid ${f.conceito===c?cColor(c):"rgba(255,255,255,0.08)"}`,background:f.conceito===c?cColor(c)+"20":"transparent",color:f.conceito===c?cColor(c):"#475569",cursor:"pointer",fontWeight:800,fontSize:14,fontFamily:"inherit"}}>{c}</button>)}</div></Field>
+      <Btn onClick={add}>{ok?"✓ Salvo!":"Registrar Prova"}</Btn>
+    </div></Card>
+    <Card title={`Provas (${data.provas.length})`}>{data.provas.length===0?<Empty/>:<div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:400,overflowY:"auto"}}>{[...data.provas].reverse().map(p=><NRow key={p.id} title={p.materia} sub={p.trimestre} c={p.conceito} onDel={()=>del(p.id)}/>)}</div>}</Card>
+  </TwoCol></Page>;
+}
+
+// ── SIMULADOS ─────────────────────────────────────────────────
+function Simulados({data,save}){
+  const [f,setF]=useState({materia:MATERIAS[0],trimestre:TRIMESTRES[0],acertos:"",total:""});
+  const [ok,setOk]=useState(false);
+  const pct=f.acertos&&f.total&&+f.total>0?Math.round((+f.acertos/+f.total)*100):null;
+  const c=pct!==null?pctToC(pct):null;
+  function add(){if(pct===null)return;save({...data,simulados:[...data.simulados,{...f,acertos:+f.acertos,total:+f.total,pct,id:Date.now()}]});setF({...f,acertos:"",total:""});setOk(true);setTimeout(()=>setOk(false),2000);}
+  function del(id){save({...data,simulados:data.simulados.filter(s=>s.id!==id)});}
+  return <Page title="Simulados" icon="⚗️" desc="Insira acertos e veja o conceito calculado."><TwoCol>
+    <Card title="Novo Simulado"><div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <Field label="Matéria"><Sel value={f.materia} onChange={v=>setF({...f,materia:v})} opts={MATERIAS}/></Field>
+      <Field label="Trimestre"><Sel value={f.trimestre} onChange={v=>setF({...f,trimestre:v})} opts={TRIMESTRES}/></Field>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <Field label="Acertos"><Inp type="number" min="0" value={f.acertos} onChange={v=>setF({...f,acertos:v})} placeholder="35"/></Field>
+        <Field label="Total de Questões"><Inp type="number" min="1" value={f.total} onChange={v=>setF({...f,total:v})} placeholder="45"/></Field>
+      </div>
+      {c&&<div style={{padding:"14px 16px",borderRadius:12,background:cColor(c)+"15",border:`1px solid ${cColor(c)}30`,display:"flex",alignItems:"center",justifyContent:"space-between"}}><div><p style={{fontSize:11,color:"#64748b",marginBottom:3}}>RESULTADO</p><p style={{fontSize:22,fontWeight:800,color:"#fff"}}>{pct}%</p></div><CTag c={c} sz="lg"/></div>}
+      <Btn onClick={add} disabled={!c}>{ok?"✓ Salvo!":"Registrar Simulado"}</Btn>
+    </div></Card>
+    <Card title={`Simulados (${data.simulados.length})`}>{data.simulados.length===0?<Empty/>:<div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:400,overflowY:"auto"}}>{[...data.simulados].reverse().map(s=><NRow key={s.id} title={s.materia} sub={`${s.trimestre} · ${s.acertos}/${s.total} (${s.pct}%)`} c={pctToC(s.pct)} onDel={()=>del(s.id)}/>)}</div>}</Card>
+  </TwoCol></Page>;
+}
+
+// ── SAS ───────────────────────────────────────────────────────
+function SasPage({data,save}){
+  const [sem,setSem]=useState("impar");
+  const [f,setF]=useState({});
+  const [ok,setOk]=useState(false);
+  const mats=sem==="impar"?(data.config?.sasImpar||[]):(data.config?.sasPar||[]);
+  function add(){const n=mats.map(m=>{const a=+(f[m]??0);return{id:Date.now()+Math.random(),materia:m,acertos:a,total:4,pct:Math.round(a/4*100),semana:sem};});save({...data,sas:[...data.sas,...n]});setF({});setOk(true);setTimeout(()=>setOk(false),2000);}
+  const byMat=useMemo(()=>{const r={};MATERIAS.forEach(m=>{const rs=data.sas.filter(s=>s.materia===m);if(rs.length){const mp=Math.round(rs.reduce((a,b)=>a+b.pct,0)/rs.length);r[m]={mp,c:pctToC(mp),count:rs.length};}});return r;},[data.sas]);
+  return <Page title="SAS — Avaliação Semanal" icon="📅" desc="Registre acertos no SAS (0 a 4 questões por matéria)."><TwoCol>
+    <Card title="Registrar SAS"><div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <Field label="Tipo de Semana"><div style={{display:"flex",gap:8}}>{["impar","par"].map(s=><button key={s} onClick={()=>setSem(s)} style={{flex:1,padding:"9px 0",borderRadius:9,border:`2px solid ${sem===s?"#6366f1":"rgba(255,255,255,0.08)"}`,background:sem===s?"#6366f120":"transparent",color:sem===s?"#a5b4fc":"#475569",cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"inherit"}}>Semana {s==="impar"?"Ímpar":"Par"}</button>)}</div></Field>
+      {mats.length===0?<p style={{color:"#475569",fontSize:13}}>⚠️ Configure nas Configurações.</p>:mats.map(m=>{const pct=f[m]!==undefined?Math.round(f[m]/4*100):null;return <div key={m} style={{display:"flex",alignItems:"center",gap:10}}><span style={{flex:1,fontSize:12,color:"#64748b"}}>{m}</span><div style={{display:"flex",gap:5}}>{[0,1,2,3,4].map(n=><button key={n} onClick={()=>setF({...f,[m]:n})} style={{width:32,height:32,borderRadius:8,border:`2px solid ${f[m]===n?"#6366f1":"rgba(255,255,255,0.1)"}`,background:f[m]===n?"#6366f130":"rgba(255,255,255,0.02)",color:f[m]===n?"#a5b4fc":"#475569",cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"inherit"}}>{n}</button>)}</div>{pct!==null&&<CTag c={pctToC(pct)} sz="sm"/>}</div>;})}
+      {mats.length>0&&<Btn onClick={add}>{ok?"✓ SAS Salvo!":"Registrar Semana"}</Btn>}
+    </div></Card>
+    <Card title="Médias SAS por Matéria">{Object.keys(byMat).length===0?<Empty msg="Nenhum SAS ainda."/>:<div style={{display:"flex",flexDirection:"column",gap:12}}>{Object.entries(byMat).map(([m,{mp,c}])=><div key={m} style={{display:"flex",alignItems:"center",gap:10}}><span style={{width:108,fontSize:12,color:"#64748b",flexShrink:0}}>{m}</span><PBar c={c}/><span style={{fontSize:10,color:"#334155",width:32,textAlign:"right"}}>{mp}%</span><CTag c={c} sz="sm"/></div>)}</div>}</Card>
+  </TwoCol>
+  {data.sas.length>0&&<div style={{marginTop:20}}><Card title={`Histórico SAS (${data.sas.length})`}><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:8,maxHeight:220,overflowY:"auto"}}>{[...data.sas].reverse().slice(0,24).map((s,i)=><div key={i} style={{padding:"10px 12px",background:"rgba(255,255,255,0.02)",borderRadius:10,border:"1px solid rgba(255,255,255,0.04)",display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><p style={{fontSize:12,fontWeight:600,color:"#94a3b8"}}>{s.materia}</p><p style={{fontSize:10,color:"#334155"}}>{s.acertos}/4 · {s.semana==="impar"?"Ímpar":"Par"}</p></div><CTag c={pctToC(s.pct)} sz="sm"/></div>)}</div></Card></div>}
+  </Page>;
+}
+
+// ── AMIGOS ────────────────────────────────────────────────────
+function Amigos({data,save,user}){
+  const [q,setQ]=useState(""); const [found,setFound]=useState(null); const [nf,setNF]=useState(false); const [cmp,setCmp]=useState(null);
+  function search(){setNF(false);setFound(null);const all=JSON.parse(localStorage.getItem("sn_users")||"[]");const u=all.find(u=>(u.email===q.trim().toLowerCase()||u.username===q.trim())&&u.id!==user.id);if(u)setFound(u);else setNF(true);}
+  function addF(){if(!found||data.amigos.find(a=>a.id===found.id))return;save({...data,amigos:[...data.amigos,{id:found.id,username:found.username,nome:found.nome,email:found.email}]});setFound(null);setQ("");}
+  function getFD(id){try{const d=localStorage.getItem(`sn_data_${id}`);return d?JSON.parse(d):{provas:[],simulados:[],sas:[]};}catch{return{provas:[],simulados:[],sas:[]};}}
+  function gm(d,mat){const a=[];(d.provas||[]).filter(p=>p.materia===mat).forEach(p=>a.push(CONCEITO_ORDEM[p.conceito]));(d.simulados||[]).filter(s=>s.materia===mat).forEach(s=>a.push(CONCEITO_ORDEM[pctToC(s.pct)]));const sm=(d.sas||[]).filter(s=>s.materia===mat);if(sm.length){const mp=sm.reduce((x,b)=>x+b.pct,0)/sm.length;a.push(CONCEITO_ORDEM[pctToC(mp)]);}if(!a.length)return null;return CONCEITOS[Math.round(a.reduce((x,b)=>x+b,0)/a.length)];}
+  const fd=cmp?getFD(cmp.id):null;
+  return <Page title="Amigos & Comparação" icon="👥" desc="Busque por e-mail ou usuário e compare boletins.">
+    <Card title="Buscar Amigo" style={{marginBottom:20}}><div style={{display:"flex",gap:10}}><Inp value={q} onChange={setQ} placeholder="E-mail ou @usuário do amigo" onKeyDown={e=>e.key==="Enter"&&search()}/><Btn onClick={search} style={{whiteSpace:"nowrap"}}>Buscar</Btn></div>
+      {nf&&<p style={{color:"#ef4444",fontSize:13,marginTop:10}}>Usuário não encontrado.</p>}
+      {found&&<div style={{marginTop:14,padding:"12px 16px",background:"rgba(99,102,241,0.08)",border:"1px solid rgba(99,102,241,0.2)",borderRadius:12,display:"flex",alignItems:"center",justifyContent:"space-between"}}><div><p style={{color:"#e2e8f0",fontWeight:700,fontSize:14}}>{found.nome||found.email}</p><p style={{color:"#64748b",fontSize:12}}>{found.email}</p></div><Btn onClick={addF}>+ Adicionar</Btn></div>}
+    </Card>
+    <div style={{display:"grid",gridTemplateColumns:cmp?"1fr 2fr":"1fr",gap:20}}>
+      <Card title={`Meus Amigos (${data.amigos.length})`}>{data.amigos.length===0?<Empty msg="Nenhum amigo ainda."/>:
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>{data.amigos.map(a=><div key={a.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",borderRadius:11,background:cmp?.id===a.id?"rgba(99,102,241,0.12)":"rgba(255,255,255,0.02)",border:cmp?.id===a.id?"1px solid rgba(99,102,241,0.3)":"1px solid rgba(255,255,255,0.04)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:28,height:28,borderRadius:"50%",background:"linear-gradient(135deg,#6366f1,#8b5cf6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:"#fff",flexShrink:0}}>{(a.nome||a.email||"?")[0].toUpperCase()}</div><div><p style={{fontSize:12,fontWeight:700,color:"#cbd5e1"}}>{a.nome||a.username}</p><p style={{fontSize:10,color:"#475569"}}>{a.email||"@"+a.username}</p></div></div>
+          <div style={{display:"flex",gap:6}}><button onClick={()=>setCmp(cmp?.id===a.id?null:a)} style={{padding:"4px 10px",borderRadius:7,border:"1px solid rgba(99,102,241,0.3)",background:"rgba(99,102,241,0.1)",color:"#a5b4fc",cursor:"pointer",fontFamily:"inherit",fontSize:11,fontWeight:700}}>{cmp?.id===a.id?"Fechar":"Comparar"}</button><button onClick={()=>{save({...data,amigos:data.amigos.filter(f=>f.id!==a.id)});if(cmp?.id===a.id)setCmp(null);}} style={{background:"none",border:"none",cursor:"pointer",color:"#ef4444",fontSize:18,lineHeight:1}}>×</button></div>
+        </div>)}</div>}
+      </Card>
+      {cmp&&fd&&<Card title={`Você vs ${(cmp.nome||cmp.username).split(" ")[0]}`}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,paddingBottom:12,borderBottom:"1px solid rgba(255,255,255,0.06)",marginBottom:8}}><span style={{fontSize:10,fontWeight:700,color:"#475569"}}>MATÉRIA</span><span style={{fontSize:10,fontWeight:700,color:"#818cf8",textAlign:"center"}}>VOCÊ</span><span style={{fontSize:10,fontWeight:700,color:"#f472b6",textAlign:"center"}}>{(cmp.nome||cmp.username).split(" ")[0].toUpperCase()}</span></div>
+        <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:360,overflowY:"auto"}}>
+          {MATERIAS.map(m=>{const mc=gm(data,m),fc=gm(fd,m);if(!mc&&!fc)return null;const mo=mc?CONCEITO_ORDEM[mc]:-1,fo=fc?CONCEITO_ORDEM[fc]:-1;return <div key={m} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,alignItems:"center",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+            <span style={{fontSize:12,color:"#64748b"}}>{m}</span>
+            <div style={{textAlign:"center"}}>{mc?<CTag c={mc} sz="sm"/>:<span style={{fontSize:11,color:"#334155"}}>—</span>}</div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>{fc?<CTag c={fc} sz="sm"/>:<span style={{fontSize:11,color:"#334155"}}>—</span>}{mc&&fc&&mo!==fo&&<span style={{fontSize:11}}>{mo>fo?"🟢":"🔴"}</span>}</div>
+          </div>;}).filter(Boolean)}
+        </div>
+        <p style={{fontSize:10,color:"#334155",marginTop:12}}>🟢 Você está melhor · 🔴 Amigo está melhor</p>
+      </Card>}
+    </div>
+  </Page>;
+}
+
+// ── CONFIG ────────────────────────────────────────────────────
+function Config({data,save}){
+  const [cfg,setCfg]=useState(()=>data.config||{numSimulados:5,sasImpar:["Química","Matemática","História","Inglês","Português"],sasPar:["Física","Geografia","Alemão","Biologia","Literatura"]});
+  const [ok,setOk]=useState(false);
+  function tog(k,m){const c=cfg[k]||[];setCfg({...cfg,[k]:c.includes(m)?c.filter(x=>x!==m):[...c,m]});}
+  function sv(){save({...data,config:cfg});setOk(true);setTimeout(()=>setOk(false),2000);}
+  const MG=({k,color})=><div style={{display:"flex",flexWrap:"wrap",gap:8,marginTop:14}}>{MATERIAS.map(m=>{const sel=cfg[k]?.includes(m);return <button key={m} onClick={()=>tog(k,m)} style={{padding:"7px 13px",borderRadius:9,border:`1.5px solid ${sel?color:"rgba(255,255,255,0.08)"}`,background:sel?color+"20":"transparent",color:sel?color:"#475569",cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:600}}>{m}</button>;})}</div>;
+  return <Page title="Configurações" icon="⚙️" desc="Configure o sistema de avaliação.">
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:20}}>
+      <Card title="SAS — Semana Ímpar"><p style={{fontSize:12,color:"#475569"}}>Matérias na semana ímpar.</p><MG k="sasImpar" color="#6366f1"/><p style={{marginTop:10,fontSize:11,color:"#334155"}}>{cfg.sasImpar?.length||0} selecionadas</p></Card>
+      <Card title="SAS — Semana Par"><p style={{fontSize:12,color:"#475569"}}>Matérias na semana par.</p><MG k="sasPar" color="#8b5cf6"/><p style={{marginTop:10,fontSize:11,color:"#334155"}}>{cfg.sasPar?.length||0} selecionadas</p></Card>
+    </div>
+    <Card title="Simulados no Ano"><p style={{fontSize:12,color:"#475569",marginBottom:14}}>Selecione conforme sua série.</p><div style={{display:"flex",gap:12}}>{[3,5,6].map(n=><button key={n} onClick={()=>setCfg({...cfg,numSimulados:n})} style={{flex:1,padding:"16px 0",borderRadius:12,border:`2px solid ${cfg.numSimulados===n?"#6366f1":"rgba(255,255,255,0.08)"}`,background:cfg.numSimulados===n?"#6366f120":"transparent",color:cfg.numSimulados===n?"#a5b4fc":"#475569",cursor:"pointer",fontFamily:"inherit",fontWeight:800,fontSize:20}}>{n}</button>)}</div></Card>
+    <div style={{marginTop:16}}><Btn onClick={sv}>{ok?"✓ Salvo!":"Salvar Configurações"}</Btn></div>
+  </Page>;
+}
+
+// ── ROOT ──────────────────────────────────────────────────────
 function App(){
-  const [user, setUser] = useState(()=>{
-    try{const u=localStorage.getItem("sn_user");return u?JSON.parse(u):null;}catch{return null;}
-  });
-  function login(u){setUser(u);localStorage.setItem("sn_user",JSON.stringify(u));}
-  function logout(){setUser(null);localStorage.removeItem("sn_user");}
-  return user ? <Shell user={user} onLogout={logout}/> : <AuthPage onLogin={login}/>;
+  const [u,setU]=useState(()=>{try{const s=localStorage.getItem("sn_user");return s?JSON.parse(s):null;}catch{return null;}});
+  function login(u){setU(u);localStorage.setItem("sn_user",JSON.stringify(u));}
+  function logout(){setU(null);localStorage.removeItem("sn_user");}
+  return u?<Shell user={u} onLogout={logout}/>:<Auth onLogin={login}/>;
 }
-
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 </body>
